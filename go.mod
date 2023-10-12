@@ -1,5 +1,3 @@
-module github.com/romycode/goserver
+module github.com/romycode/fway
 
-go 1.20
-
-require github.com/julienschmidt/httprouter v1.3.0
+go 1.21
