@@ -23,19 +23,23 @@ func (n *node) search(path string) (*node, map[string]string) {
 	params := map[string]string{}
 	parts := strings.Split(path, "/")
 
-	var currNode *node
+	var currNode = n
 	for _, part := range parts {
-		for _, child := range n.child {
+		for _, child := range currNode.child {
 			if child.part == part {
 				currNode = child
+			}
 
-				if child.isWild {
-					params[child.part] = part
-					currNode = child
-					continue
-				}
+			if child.isWild {
+				params[child.part] = part
+				currNode = child
+				continue
 			}
 		}
+	}
+
+	if currNode == n {
+		return nil, nil
 	}
 
 	return currNode, params
