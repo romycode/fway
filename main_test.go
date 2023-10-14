@@ -41,7 +41,7 @@ func TestRouter(t *testing.T) {
 		expected     string
 		expectedCode int
 	}{
-		{method: "GET", url: "/user", expected: "404 page not found", expectedCode: http.StatusNotFound},
+		{method: "GET", url: "/user", expected: "404 - NOT FOUND", expectedCode: http.StatusNotFound},
 		{method: "GET", url: "/users", expected: "This handles the GET /users", expectedCode: http.StatusOK},
 		{method: "POST", url: "/users", expected: "This handles the POST /users", expectedCode: http.StatusCreated},
 		{method: "GET", url: "/users/U1234", expected: "This handles the GET /users/:id -> /users/U1234", expectedCode: http.StatusOK},
@@ -70,5 +70,103 @@ func TestRouter(t *testing.T) {
 				t.Errorf("Expected response '%s', got '%s'", test.expected, body)
 			}
 		})
+	}
+}
+
+func TestRouter_AutomaticOptions(t *testing.T) {
+	router := NewMux()
+
+	router.Handle("GET", "/users", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "This handles the GET /users")
+	})
+
+	router.Handle("PUT", "/users/:id", func(w http.ResponseWriter, r *http.Request) {
+		params := r.Context().Value(Value("params")).(map[string]string)
+		fmt.Fprintf(w, "This handles the PUT /users/:id -> /users/%s", params["id"])
+	})
+
+	tests := []struct {
+		method          string
+		url             string
+		optionsExpected string
+		expected        string
+		expectedCode    int
+	}{
+		{method: "GET", url: "/users/U1234", optionsExpected: "PUT", expected: "404 - NOT FOUND", expectedCode: http.StatusNotFound},
+		{method: "PUT", url: "/users/U1234", optionsExpected: "PUT", expected: "This handles the PUT /users/:id -> /users/U1234", expectedCode: http.StatusOK},
+		{method: "GET", url: "/users", optionsExpected: "GET", expected: "This handles the GET /users", expectedCode: http.StatusOK},
+	}
+
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("%s__%s", test.method, test.url), func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodOptions, test.url, nil)
+			w := httptest.NewRecorder()
+
+			ctx := context.WithValue(req.Context(), Value("params"), map[string]string{})
+			req = req.WithContext(ctx)
+
+			router.ServeHTTP(w, req)
+
+			code := w.Code
+			allowed := w.Header().Get("Access-Control-Allow-Methods")
+
+			if code != http.StatusNoContent {
+				t.Errorf("Expected status code %d, got %d", http.StatusOK, code)
+			}
+
+			if test.optionsExpected != allowed {
+				t.Errorf("Expected response '%s', got '%s'", test.optionsExpected, allowed)
+			}
+
+			req = httptest.NewRequest(test.method, test.url, nil)
+			w = httptest.NewRecorder()
+
+			ctx = context.WithValue(req.Context(), Value("params"), map[string]string{})
+			req = req.WithContext(ctx)
+
+			router.ServeHTTP(w, req)
+
+			code = w.Code
+			allowed = w.Body.String()
+
+			if code != test.expectedCode {
+				t.Errorf("Expected status code %d, got %d", test.expectedCode, code)
+			}
+
+			if allowed != test.expected {
+				t.Errorf("Expected response '%s', got '%s'", test.expected, allowed)
+			}
+		})
+	}
+}
+
+func TestMux_CustomNotFoundHandler(t *testing.T) {
+	router := NewMux()
+
+	expectedBody := `{"error":{"code":"404","details":"not found"}}`
+
+	router.CustomNotFoundHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(expectedBody))
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+
+	ctx := context.WithValue(req.Context(), Value("params"), map[string]string{})
+	req = req.WithContext(ctx)
+
+	router.ServeHTTP(w, req)
+
+	code := w.Code
+	body := w.Body.String()
+
+	if code != http.StatusNotFound {
+		t.Errorf("Expected status code %d, got %d", http.StatusNotFound, code)
+	}
+
+	if body != expectedBody {
+		t.Errorf("Expected response '%s', got '%s'", expectedBody, body)
 	}
 }

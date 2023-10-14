@@ -25,17 +25,27 @@ func (n *node) search(path string) (*node, map[string]string) {
 
 	var currNode = n
 	for _, part := range parts {
+		var foundNode *node = nil
+
 		for _, child := range currNode.child {
 			if child.part == part {
-				currNode = child
+				foundNode = child
+				continue
 			}
 
 			if child.isWild {
 				params[child.part] = part
-				currNode = child
+				foundNode = child
 				continue
 			}
+
 		}
+
+		if foundNode == nil {
+			return nil, nil
+		}
+
+		currNode = foundNode
 	}
 
 	if currNode == n {
@@ -89,6 +99,8 @@ func (n *node) insert(path string, handler http.HandlerFunc) {
 type Mux struct {
 	tries   map[string]*node
 	options map[string]string
+
+	notFoundHandler http.Handler
 }
 
 func NewMux() *Mux {
@@ -96,6 +108,20 @@ func NewMux() *Mux {
 		tries:   map[string]*node{},
 		options: map[string]string{},
 	}
+}
+
+func (t *Mux) notFound(w http.ResponseWriter, r *http.Request) {
+	if nil != t.notFoundHandler {
+		t.notFoundHandler.ServeHTTP(w, r)
+		return
+	}
+
+	w.WriteHeader(http.StatusNotFound)
+	w.Write([]byte("404 - NOT FOUND"))
+}
+
+func (t *Mux) CustomNotFoundHandler(handler http.Handler) {
+	t.notFoundHandler = handler
 }
 
 func (t *Mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -106,16 +132,18 @@ func (t *Mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			p, _ := n.search(r.URL.Path[1:])
 			if p != nil {
 				allowed := t.options[p.path]
-				w.Header().Add("Allow", allowed)
+				w.Header().Add("Access-Control-Allow-Methods", allowed)
 				return
 			}
 		}
+	}
 
-		w.Header().Add("Allow", "*")
+	root, ok := t.tries[r.Method]
+	if !ok {
+		t.notFound(w, r)
 		return
 	}
 
-	root := t.tries[r.Method]
 	nh, p := root.search(r.URL.Path[1:])
 
 	if nh != nil {
@@ -125,12 +153,7 @@ func (t *Mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t.notFound(w)
-}
-
-func (t *Mux) notFound(w http.ResponseWriter) {
-	w.WriteHeader(http.StatusNotFound)
-	w.Write([]byte("404 page not found"))
+	t.notFound(w, r)
 }
 
 func (t *Mux) Handle(method, path string, handler http.HandlerFunc) {
