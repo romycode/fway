@@ -1,22 +1,20 @@
-package main
+package fway
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"net/http"
-	"sort"
 	"strings"
 )
 
 type Value string
 
 type node struct {
-	child   []*node
-	path    string
-	part    string
-	isWild  bool
-	handler http.HandlerFunc
+	child     []*node
+	wildChild []*node
+	path      string
+	part      string
+	isWild    bool
+	handler   http.HandlerFunc
 }
 
 func (n *node) search(path string) (*node, map[string]string) {
@@ -32,13 +30,16 @@ func (n *node) search(path string) (*node, map[string]string) {
 				foundNode = child
 				continue
 			}
+		}
 
-			if child.isWild {
-				params[child.part] = part
-				foundNode = child
-				continue
+		if foundNode == nil {
+			for _, child := range currNode.wildChild {
+				if child.isWild {
+					foundNode = child
+					params[child.part] = part
+					continue
+				}
 			}
-
 		}
 
 		if foundNode == nil {
@@ -82,13 +83,11 @@ func (n *node) insert(path string, handler http.HandlerFunc) {
 				part:   part,
 				isWild: isWild,
 			}
-			currNode.child = append(currNode.child, newNode)
-			sort.Slice(currNode.child, func(i, j int) bool {
-				if currNode.child[i].isWild && !currNode.child[j].isWild {
-					return false
-				}
-				return true
-			})
+			if isWild {
+				currNode.wildChild = append(currNode.wildChild, newNode)
+			} else {
+				currNode.child = append(currNode.child, newNode)
+			}
 			child = newNode
 		}
 		currNode = child
@@ -170,20 +169,4 @@ func (t *Mux) Handle(method, path string, handler http.HandlerFunc) {
 	}
 
 	root.insert(path, handler)
-}
-
-func main() {
-	router := NewMux()
-
-	router.Handle("GET", "/users/:id", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "This handles the get /users/:id route")
-	})
-
-	router.Handle("PUT", "/users/:id", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "This handles the put /users/:id route")
-	})
-
-	http.Handle("/", router)
-
-	log.Fatal(http.ListenAndServe(":3333", nil))
 }

@@ -1,4 +1,4 @@
-package main
+package fway
 
 import (
 	"context"
@@ -35,6 +35,11 @@ func TestRouter(t *testing.T) {
 		fmt.Fprintf(w, "This handles the GET /users/:id -> /users/%s", params["id"])
 	})
 
+	router.Handle("GET", "/users/:id/subscriptions", func(w http.ResponseWriter, r *http.Request) {
+		params := r.Context().Value(Value("params")).(map[string]string)
+		fmt.Fprintf(w, "/users/:id/subscriptions -> /users/%s/subscriptions", params["id"])
+	})
+
 	tests := []struct {
 		method       string
 		url          string
@@ -45,6 +50,7 @@ func TestRouter(t *testing.T) {
 		{method: "GET", url: "/users", expected: "This handles the GET /users", expectedCode: http.StatusOK},
 		{method: "POST", url: "/users", expected: "This handles the POST /users", expectedCode: http.StatusCreated},
 		{method: "GET", url: "/users/U1234", expected: "This handles the GET /users/:id -> /users/U1234", expectedCode: http.StatusOK},
+		{method: "GET", url: "/users/U1234/subscription", expected: "This handles the GET /users/:id/subscription -> /users/U1234/subscription", expectedCode: http.StatusOK},
 		{method: "PUT", url: "/users/U1234", expected: "This handles the PUT /users/:id -> /users/U1234", expectedCode: http.StatusOK},
 		{method: "DELETE", url: "/users/U1234", expected: "This handles the DELETE /users/:id -> /users/U1234", expectedCode: http.StatusOK},
 	}
