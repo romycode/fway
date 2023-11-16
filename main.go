@@ -8,6 +8,10 @@ import (
 
 type Value string
 
+func Params(r *http.Request) map[string]string {
+	return r.Context().Value(Value("params")).(map[string]string)
+}
+
 type node struct {
 	child     []*node
 	wildChild []*node
