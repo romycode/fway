@@ -1,7 +1,9 @@
 package fway
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 )
@@ -21,6 +23,34 @@ type node struct {
 	handler   http.HandlerFunc
 }
 
+func (n *node) String(i int) string {
+	var b bytes.Buffer
+
+	if n.path == "" {
+		b.WriteString("|-> [ uri: '/' ]\n")
+	} else {
+		b.WriteString(strings.Repeat("  ", i) + "|-> ")
+		part := n.part
+		if n.isWild {
+			part = ":" + n.part
+		}
+
+		b.WriteString(part)
+		b.WriteString(fmt.Sprintf(" [ uri: '%s' handler: %v ]", n.path, !(n.handler == nil)))
+		b.WriteString("\n")
+	}
+
+	for _, v := range n.child {
+		b.WriteString(v.String(i + 1))
+	}
+
+	for _, v := range n.wildChild {
+		b.WriteString(v.String(i + 1))
+	}
+
+	return b.String()
+}
+
 func (n *node) search(path string) (*node, map[string]string) {
 	params := map[string]string{}
 	parts := strings.Split(path, "/")
@@ -32,17 +62,17 @@ func (n *node) search(path string) (*node, map[string]string) {
 		for _, child := range currNode.child {
 			if child.part == part {
 				foundNode = child
-				continue
+				break
 			}
 		}
 
 		if foundNode == nil {
+			// Now only take in account first wild node registered
+			// TODO: add support for multiple wild nodes with regex
 			for _, child := range currNode.wildChild {
-				if child.isWild {
-					foundNode = child
-					params[child.part] = part
-					continue
-				}
+				foundNode = child
+				params[child.part] = part
+				break
 			}
 		}
 
@@ -61,7 +91,13 @@ func (n *node) search(path string) (*node, map[string]string) {
 }
 
 func (n *node) find(part string) *node {
-	for _, child := range n.child {
+	var children = n.child
+	if part[0] == ':' {
+		part = part[1:]
+		children = n.wildChild
+	}
+
+	for _, child := range children {
 		if child.part == part {
 			return child
 		}
@@ -106,6 +142,16 @@ type Mux struct {
 	notFoundHandler http.Handler
 }
 
+func (m *Mux) String() string {
+	var b bytes.Buffer
+	for k, v := range m.tries {
+		b.WriteString(k)
+		b.WriteString("\n\r")
+		b.WriteString(v.String(0))
+	}
+	return b.String()
+}
+
 func NewMux() *Mux {
 	return &Mux{
 		tries:   map[string]*node{},
@@ -113,9 +159,9 @@ func NewMux() *Mux {
 	}
 }
 
-func (t *Mux) notFound(w http.ResponseWriter, r *http.Request) {
-	if nil != t.notFoundHandler {
-		t.notFoundHandler.ServeHTTP(w, r)
+func (m *Mux) notFound(w http.ResponseWriter, r *http.Request) {
+	if nil != m.notFoundHandler {
+		m.notFoundHandler.ServeHTTP(w, r)
 		return
 	}
 
@@ -123,27 +169,27 @@ func (t *Mux) notFound(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("404 - NOT FOUND"))
 }
 
-func (t *Mux) CustomNotFoundHandler(handler http.Handler) {
-	t.notFoundHandler = handler
+func (m *Mux) CustomNotFoundHandler(handler http.Handler) {
+	m.notFoundHandler = handler
 }
 
-func (t *Mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (m *Mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 
-		for _, n := range t.tries {
+		for _, n := range m.tries {
 			p, _ := n.search(r.URL.Path[1:])
 			if p != nil {
-				allowed := t.options[p.path]
+				allowed := m.options[p.path]
 				w.Header().Add("Access-Control-Allow-Methods", allowed)
 				return
 			}
 		}
 	}
 
-	root, ok := t.tries[r.Method]
+	root, ok := m.tries[r.Method]
 	if !ok {
-		t.notFound(w, r)
+		m.notFound(w, r)
 		return
 	}
 
@@ -156,20 +202,20 @@ func (t *Mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t.notFound(w, r)
+	m.notFound(w, r)
 }
 
-func (t *Mux) Handle(method, path string, handler http.HandlerFunc) {
+func (m *Mux) Handle(method, path string, handler http.HandlerFunc) {
 	method = strings.ToUpper(method)
-	root := t.tries[method]
+	root := m.tries[method]
 	if root == nil {
-		root = &node{child: []*node{}}
-		t.tries[method] = root
+		root = &node{path: "", part: "", child: []*node{}}
+		m.tries[method] = root
 	}
-	if _, ok := t.options[path]; ok {
-		t.options[path] = t.options[path] + ", " + method
+	if _, ok := m.options[path]; ok {
+		m.options[path] = m.options[path] + ", " + method
 	} else {
-		t.options[path] = method
+		m.options[path] = method
 	}
 
 	root.insert(path, handler)

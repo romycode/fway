@@ -8,6 +8,38 @@ import (
 	"testing"
 )
 
+func TestNode(t *testing.T) {
+	t.Run("insert node", func(t *testing.T) {
+		var n = &node{
+			path:   "",
+			part:   "",
+			isWild: false,
+		}
+
+		n.insert("/users", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("/users"))
+		})
+		n.insert("/users/:id", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("/users/:id"))
+		})
+		n.insert("/users/:id/subscriptions", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("/users/:id"))
+		})
+
+		expectedNode := "|-> [ uri: '/' ]" +
+			"\n  |-> users [ uri: '/users' ]" +
+			"\n    |-> :id [ uri: '/users/:id' ]" +
+			"\n      |-> subscriptions [ uri: '/users/:id/subscriptions' ]" +
+			"\n"
+
+		actual := n.String(0)
+
+		if expectedNode != actual {
+			t.Fatalf("expected: %s\ngot: %s", expectedNode, actual)
+		}
+	})
+}
+
 func TestRouter(t *testing.T) {
 	router := NewMux()
 
@@ -37,7 +69,7 @@ func TestRouter(t *testing.T) {
 
 	router.Handle("GET", "/users/:id/subscriptions", func(w http.ResponseWriter, r *http.Request) {
 		params := r.Context().Value(Value("params")).(map[string]string)
-		fmt.Fprintf(w, "/users/:id/subscriptions -> /users/%s/subscriptions", params["id"])
+		fmt.Fprintf(w, "This handles the GET /users/:id/subscriptions -> /users/%s/subscriptions", params["id"])
 	})
 
 	tests := []struct {
@@ -50,7 +82,7 @@ func TestRouter(t *testing.T) {
 		{method: "GET", url: "/users", expected: "This handles the GET /users", expectedCode: http.StatusOK},
 		{method: "POST", url: "/users", expected: "This handles the POST /users", expectedCode: http.StatusCreated},
 		{method: "GET", url: "/users/U1234", expected: "This handles the GET /users/:id -> /users/U1234", expectedCode: http.StatusOK},
-		{method: "GET", url: "/users/U1234/subscription", expected: "This handles the GET /users/:id/subscription -> /users/U1234/subscription", expectedCode: http.StatusOK},
+		{method: "GET", url: "/users/U1234/subscriptions", expected: "This handles the GET /users/:id/subscriptions -> /users/U1234/subscriptions", expectedCode: http.StatusOK},
 		{method: "PUT", url: "/users/U1234", expected: "This handles the PUT /users/:id -> /users/U1234", expectedCode: http.StatusOK},
 		{method: "DELETE", url: "/users/U1234", expected: "This handles the DELETE /users/:id -> /users/U1234", expectedCode: http.StatusOK},
 	}
