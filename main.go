@@ -83,10 +83,6 @@ func (n *node) search(path string) (*node, map[string]string) {
 		currNode = foundNode
 	}
 
-	if currNode == n {
-		return nil, nil
-	}
-
 	return currNode, params
 }
 
@@ -119,9 +115,10 @@ func (n *node) insert(path string, handler http.HandlerFunc) {
 				path = currNode.path + "/:" + part
 			}
 			newNode := &node{
-				path:   path,
-				part:   part,
-				isWild: isWild,
+				path:    path,
+				part:    part,
+				isWild:  isWild,
+				handler: nil,
 			}
 			if isWild {
 				currNode.wildChild = append(currNode.wildChild, newNode)
@@ -166,10 +163,11 @@ func (m *Mux) notFound(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNotFound)
-	w.Write([]byte("404 - NOT FOUND"))
+	w.Header().Add("content-type", "text/plain")
+	_, _ = w.Write([]byte("404 - NOT FOUND"))
 }
 
-func (m *Mux) CustomNotFoundHandler(handler http.Handler) {
+func (m *Mux) NotFoundHandler(handler http.Handler) {
 	m.notFoundHandler = handler
 }
 
@@ -195,7 +193,7 @@ func (m *Mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	nh, p := root.search(r.URL.Path[1:])
 
-	if nh != nil {
+	if nh != nil && nh.handler != nil {
 		ctx := context.WithValue(r.Context(), Value("params"), p)
 		r = r.WithContext(ctx)
 		nh.handler(w, r)
